@@ -5,7 +5,8 @@ jest.mock("electron", () => {
     app: {
       getVersion: () => "99.99.99",
       getPath: () => "tmp",
-      getLocale: () => "en"
+      getLocale: () => "en",
+      setLoginItemSettings: (): void => void 0,
     }
   };
 });
@@ -13,12 +14,20 @@ jest.mock("electron", () => {
 import { UserStore } from "../user-store";
 import { SemVer } from "semver";
 import electron from "electron";
+import { Console } from "console";
+import { stdout, stderr } from "process";
+
+console = new Console(stdout, stderr);
 
 describe("user store tests", () => {
   describe("for an empty config", () => {
     beforeEach(() => {
       UserStore.resetInstance();
-      mockFs({ tmp: { "config.json": "{}" } });
+      mockFs({ tmp: { "config.json": "{}", "kube_config": "{}" } });
+
+      (UserStore.getInstanceOrCreate() as any).refreshNewContexts = jest.fn(() => Promise.resolve());
+
+      return UserStore.getInstance().load();
     });
 
     afterEach(() => {
@@ -26,14 +35,14 @@ describe("user store tests", () => {
     });
 
     it("allows setting and retrieving lastSeenAppVersion", () => {
-      const us = UserStore.getInstance<UserStore>();
+      const us = UserStore.getInstance();
 
       us.lastSeenAppVersion = "1.2.3";
       expect(us.lastSeenAppVersion).toBe("1.2.3");
     });
 
     it("allows adding and listing seen contexts", () => {
-      const us = UserStore.getInstance<UserStore>();
+      const us = UserStore.getInstance();
 
       us.seenContexts.add("foo");
       expect(us.seenContexts.size).toBe(1);
@@ -46,7 +55,7 @@ describe("user store tests", () => {
     });
 
     it("allows setting and getting preferences", () => {
-      const us = UserStore.getInstance<UserStore>();
+      const us = UserStore.getInstance();
 
       us.preferences.httpsProxy = "abcd://defg";
 
@@ -58,7 +67,7 @@ describe("user store tests", () => {
     });
 
     it("correctly resets theme to default value", async () => {
-      const us = UserStore.getInstance<UserStore>();
+      const us = UserStore.getInstance();
 
       us.isLoaded = true;
 
@@ -68,7 +77,7 @@ describe("user store tests", () => {
     });
 
     it("correctly calculates if the last seen version is an old release", () => {
-      const us = UserStore.getInstance<UserStore>();
+      const us = UserStore.getInstance();
 
       expect(us.isNewVersion).toBe(true);
 
@@ -89,6 +98,8 @@ describe("user store tests", () => {
           })
         }
       });
+
+      return UserStore.getInstanceOrCreate().load();
     });
 
     afterEach(() => {
@@ -96,7 +107,7 @@ describe("user store tests", () => {
     });
 
     it("sets last seen app version to 0.0.0", () => {
-      const us = UserStore.getInstance<UserStore>();
+      const us = UserStore.getInstance();
 
       expect(us.lastSeenAppVersion).toBe("0.0.0");
     });

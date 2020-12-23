@@ -7,6 +7,8 @@ import { dockStore, IDockTab, TabKind } from "../dock.store";
 import { createResourceTab } from "../create-resource.store";
 import { createTerminalTab } from "../terminal.store";
 import { observable } from "mobx";
+import { ThemeStore } from "../../../theme.store";
+import { UserStore } from "../../../../common/user-store";
 
 const onChangeTab = jest.fn();
 
@@ -19,12 +21,31 @@ const getComponent = () => (
   />
 );
 
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: jest.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(), // Deprecated
+    removeListener: jest.fn(), // Deprecated
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+});
+
 const renderTabs = () => render(getComponent());
 
 const getTabKinds = () => dockStore.tabs.map(tab => tab.kind);
 
 describe("<DockTabs />", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    ThemeStore.resetInstance();
+    UserStore.resetInstance();
+
+    UserStore.getInstanceOrCreate();
+    await ThemeStore.getInstanceOrCreate().init();
     createTerminalTab();
     createResourceTab();
     createTerminalTab();

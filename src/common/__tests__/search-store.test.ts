@@ -3,6 +3,10 @@
  */
 
 import { SearchStore } from "../search-store";
+import { Console } from "console";
+import { stdout, stderr } from "process";
+
+console = new Console(stdout, stderr);
 
 let searchStore: SearchStore = null;
 const logs = [

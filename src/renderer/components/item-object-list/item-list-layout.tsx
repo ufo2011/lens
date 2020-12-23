@@ -18,11 +18,11 @@ import { Filter, FilterType, pageFilters } from "./page-filters.store";
 import { PageFiltersList } from "./page-filters-list";
 import { PageFiltersSelect } from "./page-filters-select";
 import { NamespaceSelectFilter } from "../+namespaces/namespace-select";
-import { themeStore } from "../../theme.store";
+import { ThemeStore } from "../../theme.store";
 import { MenuActions} from "../menu/menu-actions";
 import { MenuItem } from "../menu";
 import { Checkbox } from "../checkbox";
-import { userStore } from "../../../common/user-store";
+import { UserStore } from "../../../common/user-store";
 import logger from "../../../main/logger";
 
 // todo: refactor, split to small re-usable components
@@ -122,7 +122,7 @@ export class ItemListLayout extends React.Component<ItemListLayoutProps> {
   async componentDidMount() {
     const { store, dependentStores, isClusterScoped, tableId } = this.props;
 
-    if (this.canBeConfigured) this.hiddenColumnNames = new Set(userStore.preferences?.hiddenTableColumns?.[tableId]);
+    if (this.canBeConfigured) this.hiddenColumnNames = new Set(UserStore.getInstance().preferences?.hiddenTableColumns?.[tableId]);
 
     const stores = [store, ...dependentStores];
 
@@ -236,7 +236,7 @@ export class ItemListLayout extends React.Component<ItemListLayoutProps> {
     }
 
     if (this.canBeConfigured) {
-      userStore.preferences.hiddenTableColumns[this.props.tableId] = Array.from(this.hiddenColumnNames);
+      UserStore.getInstance().preferences.hiddenTableColumns[this.props.tableId] = Array.from(this.hiddenColumnNames);
     }
   }
 
@@ -467,7 +467,7 @@ export class ItemListLayout extends React.Component<ItemListLayoutProps> {
             noItems={this.renderNoItems()}
             {...({
               ...tableProps,
-              className: cssNames("box grow", tableProps.className, themeStore.activeTheme.type),
+              className: cssNames("box grow", tableProps.className, ThemeStore.getInstance().activeTheme.type),
             })}
           >
             {renderTableHeader && (
