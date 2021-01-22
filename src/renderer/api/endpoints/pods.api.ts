@@ -357,7 +357,7 @@ export class Pod extends WorkloadKubeObject {
       }
 
       if (state.terminated) {
-        return state.terminated.reason || "Waiting";
+        return state.terminated.reason || "Terminated";
       }
     }
 
