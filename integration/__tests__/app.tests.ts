@@ -1,3 +1,7 @@
+/**
+ * @jest-environment node
+ */
+
 /*
   Cluster tests are run if there is a pre-existing minikube cluster. Before running cluster tests the TEST_NAMESPACE
   namespace is removed, if it exists, from the minikube cluster. Resources are created as part of the cluster tests in the

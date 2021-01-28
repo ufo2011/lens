@@ -1,3 +1,8 @@
+CMD_ARGS = $(filter-out $@,$(MAKECMDGOALS))
+
+%:
+  @:
+
 EXTENSIONS_DIR = ./extensions
 extensions = $(foreach dir, $(wildcard $(EXTENSIONS_DIR)/*), ${dir})
 extension_node_modules = $(foreach dir, $(wildcard $(EXTENSIONS_DIR)/*), ${dir}/node_modules)
@@ -9,10 +14,11 @@ else
     DETECTED_OS := $(shell uname)
 endif
 
+.PHONY: binaries/client
 binaries/client: node_modules
 	yarn download-bins
 
-node_modules:
+node_modules: yarn.lock
 	yarn install --frozen-lockfile
 	yarn check --verify-tree --integrity
 
@@ -34,7 +40,7 @@ lint:
 
 .PHONY: test
 test: binaries/client
-	yarn test
+	yarn run jest $(or $(CMD_ARGS), "src")
 
 .PHONY: integration-linux
 integration-linux: build-extension-types build-extensions
@@ -50,10 +56,6 @@ integration-mac: build-extension-types build-extensions
 integration-win: build-extension-types build-extensions
 	yarn build:win
 	yarn integration
-
-.PHONY: test-app
-test-app:
-	yarn test
 
 .PHONY: build
 build: node_modules binaries/client build-extensions
