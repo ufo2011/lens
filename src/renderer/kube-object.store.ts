@@ -7,6 +7,7 @@ import { ItemStore } from "./item.store";
 import { apiManager } from "./api/api-manager";
 import { IKubeApiQueryParams, KubeApi, parseKubeApi } from "./api/kube-api";
 import { KubeJsonApiData } from "./api/kube-json-api";
+import { Notifications } from "./components/notifications";
 
 export interface KubeObjectStoreLoadingParams {
   namespaces: string[];
@@ -124,7 +125,10 @@ export abstract class KubeObjectStore<T extends KubeObject = any> extends ItemSt
       this.items.replace(items);
       this.isLoaded = true;
     } catch (error) {
-      console.error("Loading store items failed", { error, store: this });
+      if (error.message) {
+        Notifications.error(error.message);
+      }
+      console.error("Loading store items failed", { error });
       this.resetOnError(error);
     } finally {
       this.isLoading = false;

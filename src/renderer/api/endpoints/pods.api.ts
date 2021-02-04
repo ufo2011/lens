@@ -7,7 +7,7 @@ export class PodsApi extends KubeApi<Pod> {
   async getLogs(params: { namespace: string; name: string }, query?: IPodLogsQuery): Promise<string> {
     const path = `${this.getUrl(params)}/log`;
 
-    return this.request.get(path, { query });
+    return this.request.get(path, { query,  });
   }
 
   getMetrics(pods: Pod[], namespace: string, selector = "pod, namespace"): Promise<IPodMetrics> {

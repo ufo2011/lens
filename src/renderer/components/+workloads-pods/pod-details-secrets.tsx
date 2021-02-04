@@ -18,10 +18,10 @@ export class PodDetailsSecrets extends Component<Props> {
   @observable secrets: (Secret | string)[] = [];
 
   @disposeOnUnmount
-  secretsLoader = autorun(async () => {
+  secretsLoader = autorun(() => {
     const { pod } = this.props;
 
-    this.secrets = await Promise.all(
+    Promise.all(
       pod.getSecrets()
         .map(secretName => (
           secretsApi
@@ -29,10 +29,12 @@ export class PodDetailsSecrets extends Component<Props> {
               name: secretName,
               namespace: pod.getNs(),
             })
+            .catch(error => (console.error("Failed to load secret details", error), secretName))
             // res is undefined if context doesn't have get/list secrets
-            .then(res => res ?? secretName)
         ))
-    );
+    )
+      .then(secrets => this.secrets = secrets)
+      .catch(error => console.log("Failed to load secret details", error));
   });
 
   @autobind()
