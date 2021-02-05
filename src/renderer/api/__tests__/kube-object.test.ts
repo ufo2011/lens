@@ -30,7 +30,6 @@ describe("KubeObject", () => {
         ["metadata.uid", { kind: "", apiVersion: "", metadata: { name: "", resourceVersion: "", selfLink: ""} }],
         ["metadata.name", { kind: "", apiVersion: "", metadata: { uid: "", resourceVersion: "", selfLink: "" } }],
         ["metadata.resourceVersion", { kind: "", apiVersion: "", metadata: { uid: "", name: "", selfLink: "" } }],
-        ["metadata.selfLink", { kind: "", apiVersion: "", metadata: { uid: "", name: "", resourceVersion: "" } }],
       ];
 
       it.each(tests)("should reject with missing: %s", (missingField, input) => {
@@ -114,7 +113,6 @@ describe("KubeObject", () => {
         ["metadata.uid", { kind: "", apiVersion: "", metadata: {  name: "", resourceVersion: "", selfLink: ""} }],
         ["metadata.name", { kind: "", apiVersion: "", metadata: { uid: "", resourceVersion: "", selfLink: "" } }],
         ["metadata.resourceVersion", { kind: "", apiVersion: "", metadata: { uid: "", name: "", selfLink: "" } }],
-        ["metadata.selfLink", { kind: "", apiVersion: "", metadata: { uid: "", name: "", resourceVersion: "" } }],
       ];
 
       it.each(tests)("should reject with missing non-top level field: %s", (missingField, input) => {
@@ -195,7 +193,6 @@ describe("KubeObject", () => {
         ["apiVersion", { kind: "", items: [], metadata: { resourceVersion: "", selfLink: "" } }],
         ["metadata", { kind: "", items: [], apiVersion: "" }],
         ["metadata.resourceVersion", { kind: "", items: [], apiVersion: "", metadata: { selfLink: "" } }],
-        ["metadata.selfLink", { kind: "", items: [], apiVersion: "", metadata: { resourceVersion: "" } }],
       ];
 
       it.each(tests)("should reject with missing: %s", (missingField, input) => {
