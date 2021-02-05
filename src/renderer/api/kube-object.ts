@@ -69,7 +69,7 @@ export class KubeObject implements ItemObject {
     return (
       isObject(object)
       && hasTypedProperty(object, "resourceVersion", isString)
-      && hasTypedProperty(object, "selfLink", isString)
+      && hasOptionalProperty(object, "selfLink", isString)
     );
   }
 
@@ -79,7 +79,7 @@ export class KubeObject implements ItemObject {
       && hasTypedProperty(object, "uid", isString)
       && hasTypedProperty(object, "name", isString)
       && hasTypedProperty(object, "resourceVersion", isString)
-      && hasTypedProperty(object, "selfLink", isString)
+      && hasOptionalProperty(object, "selfLink", isString)
       && hasOptionalProperty(object, "namespace", isString)
       && hasOptionalProperty(object, "creationTimestamp", isString)
       && hasOptionalProperty(object, "continue", isString)

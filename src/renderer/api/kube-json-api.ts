@@ -2,7 +2,7 @@ import { JsonApi, JsonApiData, JsonApiError } from "./json-api";
 
 export interface KubeJsonApiListMetadata {
   resourceVersion: string;
-  selfLink: string;
+  selfLink?: string;
 }
 
 export interface KubeJsonApiDataList<T = KubeJsonApiData> {
