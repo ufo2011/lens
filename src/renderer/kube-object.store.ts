@@ -2,7 +2,7 @@ import type { ClusterContext } from "./components/context";
 
 import { action, computed, observable, reaction, when } from "mobx";
 import { autobind } from "./utils";
-import { KubeObject } from "./api/kube-object";
+import { KubeObject, KubeStatus } from "./api/kube-object";
 import { IKubeWatchEvent } from "./api/kube-watch-api";
 import { ItemStore } from "./item.store";
 import { apiManager } from "./api/api-manager";
@@ -112,7 +112,7 @@ export abstract class KubeObjectStore<T extends KubeObject = any> extends ItemSt
 
       const isLoadingAll = this.context.allNamespaces.every(ns => namespaces.includes(ns));
 
-      if (isLoadingAll) {
+      if (isLoadingAll && this.context.cluster.accessibleNamespaces.length === 0) {
         this.loadedNamespaces = [];
 
         return api.list({}, this.query);
@@ -150,8 +150,10 @@ export abstract class KubeObjectStore<T extends KubeObject = any> extends ItemSt
       if (merge) {
         this.mergeItems(items, { replace: false });
       } else {
-        return items;
+        this.mergeItems(items, { replace: true });
       }
+
+      return items;
     } catch (error) {
       if (error.message) {
         Notifications.error(error.message);
@@ -180,10 +182,10 @@ export abstract class KubeObjectStore<T extends KubeObject = any> extends ItemSt
 
     // update existing items
     if (!replace) {
-      const partialIds = partialItems.map(item => item.getId());
+      const namespaces = partialItems.map(item => item.getNs());
 
       items = [
-        ...this.items.filter(existingItem => !partialIds.includes(existingItem.getId())),
+        ...this.items.filter(existingItem => !namespaces.includes(existingItem.getNs())),
         ...partialItems,
       ];
     }
@@ -271,31 +273,80 @@ export abstract class KubeObjectStore<T extends KubeObject = any> extends ItemSt
   }
 
   subscribe(apis = this.getSubscribeApis()) {
-    let disposers: {(): void}[] = [];
+    const abortController = new AbortController();
+    const namespaces = [...this.loadedNamespaces];
 
-    const callback = (data: IKubeWatchEvent) => {
-      if (!this.isLoaded) return;
-
-      this.eventsBuffer.push(data);
-    };
-
-    if (this.context.cluster?.isGlobalWatchEnabled && this.loadedNamespaces.length === 0) {
-      disposers = apis.map(api => api.watch({
-        namespace: "",
-        callback: (data) => callback(data),
-      }));
+    if (this.context.cluster?.isGlobalWatchEnabled && namespaces.length === 0) {
+      apis.forEach(api => this.watchNamespace(api, "", abortController));
     } else {
-      apis.map(api => {
+      apis.forEach(api => {
         this.loadedNamespaces.forEach((namespace) => {
-          disposers.push(api.watch({
-            namespace,
-            callback: (data) => callback(data)
-          }));
+          this.watchNamespace(api, namespace, abortController);
         });
       });
     }
 
-    return () => disposers.forEach(dispose => dispose());
+    return () => {
+      abortController.abort();
+    };
+  }
+
+  private watchNamespace(api: KubeApi<T>, namespace: string, abortController: AbortController) {
+    let timedRetry: NodeJS.Timeout;
+
+    abortController.signal.addEventListener("abort", () => clearTimeout(timedRetry));
+
+    const callback = (data: IKubeWatchEvent, error: any) => {
+      if (!this.isLoaded || abortController.signal.aborted) return;
+
+      if (error instanceof Response) {
+        if (error.status === 404) {
+          // api has gone, let's not retry
+          return;
+        } else { // not sure what to do, best to retry
+          if (timedRetry) clearTimeout(timedRetry);
+          timedRetry = setTimeout(() => {
+            api.watch({
+              namespace,
+              abortController,
+              callback
+            });
+          }, 5000);
+        }
+      } else if (error instanceof KubeStatus && error.code === 410) {
+        if (timedRetry) clearTimeout(timedRetry);
+        // resourceVersion has gone, let's try to reload
+        timedRetry = setTimeout(() => {
+          (namespace === "" ? this.loadAll({ merge: false }) : this.loadAll({namespaces: [namespace]})).then(() => {
+            api.watch({
+              namespace,
+              abortController,
+              callback
+            });
+          });
+        }, 1000);
+      } else if(error) { // not sure what to do, best to retry
+        if (timedRetry) clearTimeout(timedRetry);
+
+        timedRetry = setTimeout(() => {
+          api.watch({
+            namespace,
+            abortController,
+            callback
+          });
+        }, 5000);
+      }
+
+      if (data) {
+        this.eventsBuffer.push(data);
+      }
+    };
+
+    api.watch({
+      namespace,
+      abortController,
+      callback: (data, error) => callback(data, error)
+    });
   }
 
   @action
