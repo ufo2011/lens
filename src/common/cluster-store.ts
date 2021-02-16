@@ -355,7 +355,7 @@ export class ClusterStore extends BaseStore<ClusterStoreModel> {
 export function getClusterIdFromHost(hostname: string): ClusterId {
   const subDomains = hostname.split(":")[0].split(".");
 
-  return subDomains.slice(-2)[0]; // e.g host == "%clusterId.localhost:45345"
+  return subDomains.slice(-2, -1)[0]; // ClusterId or undefined
 }
 
 export function getClusterFrameUrl(clusterId: ClusterId) {
@@ -363,7 +363,7 @@ export function getClusterFrameUrl(clusterId: ClusterId) {
 }
 
 export function getHostedClusterId() {
-  return getClusterIdFromHost(location.hostname);
+  return getClusterIdFromHost(location.host);
 }
 
 export function getHostedCluster(): Cluster {
