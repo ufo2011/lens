@@ -40,7 +40,15 @@ export async function initView(clusterId: ClusterId) {
 }
 
 export async function autoCleanOnRemove(clusterId: ClusterId, iframe: HTMLIFrameElement) {
-  await when(() => !ClusterStore.getInstance().getById(clusterId));
+  await when(() => {
+    const cluster = ClusterStore.getInstance().getById(clusterId);
+
+    if (!cluster) return true;
+
+    const view = lensViews.get(clusterId);
+
+    return cluster.disconnected && view?.isLoaded;
+  });
   logger.info(`[LENS-VIEW]: remove dashboard, clusterId=${clusterId}`);
   lensViews.delete(clusterId);
 

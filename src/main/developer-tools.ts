@@ -4,11 +4,17 @@ import logger from "./logger";
  * Installs Electron developer tools in the development build.
  * The dependency is not bundled to the production build.
  */
-export const installDeveloperTools = () => {
+export async function installDeveloperTools(): Promise<void> {
   if (process.env.NODE_ENV === "development") {
-    import("electron-devtools-installer")
-      .then(({ default: devToolsInstaller, REACT_DEVELOPER_TOOLS }) => devToolsInstaller([REACT_DEVELOPER_TOOLS]))
-      .then((name) => logger.info(`[DEVTOOLS-INSTALLER]: installed ${name}`))
-      .catch(error => logger.error(`[DEVTOOLS-INSTALLER]: failed`, { error }));
+    logger.info("🤓 Installing developer tools");
   }
-};
+
+  try {
+    const { default: devToolsInstaller, REACT_DEVELOPER_TOOLS } = await import("electron-devtools-installer");
+    const name = await devToolsInstaller([REACT_DEVELOPER_TOOLS]);
+
+    logger.info(`[DEVTOOLS-INSTALLER]: installed devtools ${name}`);
+  } catch (error) {
+    logger.error(`[DEVTOOLS-INSTALLER]: failed`, { error });
+  }
+}

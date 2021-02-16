@@ -48,6 +48,7 @@ export interface ClusterState {
   isAdmin: boolean;
   allowedNamespaces: string[]
   allowedResources: string[]
+  isGlobalWatchEnabled: boolean;
 }
 
 /**
@@ -90,7 +91,6 @@ export class Cluster implements ClusterModel, ClusterState {
    * @observable
    */
   @observable initializing = false;
-
 
   /**
    * Is cluster object initialized
@@ -178,6 +178,12 @@ export class Cluster implements ClusterModel, ClusterState {
    */
   @observable isAdmin = false;
   /**
+   * Global watch-api accessibility , e.g. "/api/v1/services?watch=1"
+   *
+   * @observable
+   */
+  @observable isGlobalWatchEnabled = false;
+  /**
    * Preferences
    *
    * @observable
@@ -190,7 +196,7 @@ export class Cluster implements ClusterModel, ClusterState {
    */
   @observable metadata: ClusterMetadata = {};
   /**
-   * List of allowed namespaces
+   * List of allowed namespaces verified via K8S::SelfSubjectAccessReview api
    *
    * @observable
    */
@@ -203,7 +209,7 @@ export class Cluster implements ClusterModel, ClusterState {
    */
   @observable allowedResources: string[] = [];
   /**
-   * List of accessible namespaces
+   * List of accessible namespaces provided by user in the Cluster Settings
    *
    * @observable
    */
@@ -224,7 +230,7 @@ export class Cluster implements ClusterModel, ClusterState {
    * @computed
    */
   @computed get name() {
-    return this.preferences.clusterName || this.contextName;
+    return this.preferences.clusterName || this.contextName;
   }
 
   /**
@@ -279,7 +285,8 @@ export class Cluster implements ClusterModel, ClusterState {
    * @param port port where internal auth proxy is listening
    * @internal
    */
-  @action async init(port: number) {
+  @action
+  async init(port: number) {
     try {
       this.initializing = true;
       this.contextHandler = new ContextHandler(this);
@@ -334,7 +341,8 @@ export class Cluster implements ClusterModel, ClusterState {
    * @param force force activation
    * @internal
    */
-  @action async activate(force = false) {
+  @action
+  async activate(force = false) {
     if (this.activated && !force) {
       return this.pushState();
     }
@@ -351,9 +359,7 @@ export class Cluster implements ClusterModel, ClusterState {
     await this.refreshConnectionStatus();
 
     if (this.accessible) {
-      await this.refreshAllowedResources();
-      this.isAdmin = await this.isClusterAdmin();
-      this.ready = true;
+      await this.refreshAccessibility();
       this.ensureKubectl();
     }
     this.activated = true;
@@ -373,7 +379,8 @@ export class Cluster implements ClusterModel, ClusterState {
   /**
    * @internal
    */
-  @action async reconnect() {
+  @action
+  async reconnect() {
     logger.info(`[CLUSTER]: reconnect`, this.getMeta());
     this.contextHandler?.stopServer();
     await this.contextHandler?.ensureServer();
@@ -392,6 +399,7 @@ export class Cluster implements ClusterModel, ClusterState {
     this.accessible = false;
     this.ready = false;
     this.activated = false;
+    this.allowedNamespaces = [];
     this.resourceAccessStatuses.clear();
     this.pushState();
   }
@@ -400,19 +408,18 @@ export class Cluster implements ClusterModel, ClusterState {
    * @internal
    * @param opts refresh options
    */
-  @action async refresh(opts: ClusterRefreshOptions = {}) {
+  @action
+  async refresh(opts: ClusterRefreshOptions = {}) {
     logger.info(`[CLUSTER]: refresh`, this.getMeta());
     await this.whenInitialized;
     await this.refreshConnectionStatus();
 
     if (this.accessible) {
-      this.isAdmin = await this.isClusterAdmin();
-      await this.refreshAllowedResources();
+      await this.refreshAccessibility();
 
       if (opts.refreshMetadata) {
         this.refreshMetadata();
       }
-      this.ready = true;
     }
     this.pushState();
   }
@@ -420,7 +427,8 @@ export class Cluster implements ClusterModel, ClusterState {
   /**
    * @internal
    */
-  @action async refreshMetadata() {
+  @action
+  async refreshMetadata() {
     logger.info(`[CLUSTER]: refreshMetadata`, this.getMeta());
     const metadata = await detectorRegistry.detectForCluster(this);
     const existingMetadata = this.metadata;
@@ -431,7 +439,20 @@ export class Cluster implements ClusterModel, ClusterState {
   /**
    * @internal
    */
-  @action async refreshConnectionStatus() {
+  private async refreshAccessibility(): Promise<void> {
+    this.isAdmin = await this.isClusterAdmin();
+    this.isGlobalWatchEnabled = await this.canUseWatchApi({ resource: "*" });
+
+    await this.refreshAllowedResources();
+
+    this.ready = true;
+  }
+
+  /**
+   * @internal
+   */
+  @action
+  async refreshConnectionStatus() {
     const connectionStatus = await this.getConnectionStatus();
 
     this.online = connectionStatus > ClusterStatus.Offline;
@@ -441,7 +462,8 @@ export class Cluster implements ClusterModel, ClusterState {
   /**
    * @internal
    */
-  @action async refreshAllowedResources() {
+  @action
+  async refreshAllowedResources() {
     this.allowedNamespaces = await this.getAllowedNamespaces();
     this.allowedResources = await this.getAllowedResources();
   }
@@ -564,6 +586,17 @@ export class Cluster implements ClusterModel, ClusterState {
     });
   }
 
+  /**
+   * @internal
+   */
+  async canUseWatchApi(customizeResource: V1ResourceAttributes = {}): Promise<boolean> {
+    return this.canI({
+      verb: "watch",
+      resource: "*",
+      ...customizeResource,
+    });
+  }
+
   toJSON(): ClusterModel {
     const model: ClusterModel = {
       id: this.id,
@@ -597,6 +630,7 @@ export class Cluster implements ClusterModel, ClusterState {
       isAdmin: this.isAdmin,
       allowedNamespaces: this.allowedNamespaces,
       allowedResources: this.allowedResources,
+      isGlobalWatchEnabled: this.isGlobalWatchEnabled,
     };
 
     return toJS(state, {
@@ -668,7 +702,7 @@ export class Cluster implements ClusterModel, ClusterState {
           for (const namespace of this.allowedNamespaces.slice(0, 10)) {
             if (!this.resourceAccessStatuses.get(apiResource)) {
               const result = await this.canI({
-                resource: apiResource.resource,
+                resource: apiResource.apiName,
                 group: apiResource.group,
                 verb: "list",
                 namespace
@@ -683,9 +717,19 @@ export class Cluster implements ClusterModel, ClusterState {
 
       return apiResources
         .filter((resource) => this.resourceAccessStatuses.get(resource))
-        .map(apiResource => apiResource.resource);
+        .map(apiResource => apiResource.apiName);
     } catch (error) {
       return [];
     }
+  }
+
+  isAllowedResource(kind: string): boolean {
+    const apiResource = apiResources.find(resource => resource.kind === kind || resource.apiName === kind);
+
+    if (apiResource) {
+      return this.allowedResources.includes(apiResource.apiName);
+    }
+
+    return true; // allowed by default for other resources
   }
 }

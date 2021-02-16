@@ -28,7 +28,7 @@ export class LensProxy extends Singleton {
 
   listen(port = this.port): this {
     this.proxyServer = this.buildCustomProxy().listen(port);
-    logger.info(`LensProxy server has started at ${this.origin}`);
+    logger.info(`[LENS-PROXY]: Proxy server has started at ${this.origin}`);
 
     return this;
   }
@@ -193,7 +193,8 @@ export class LensProxy extends Singleton {
 
       if (proxyTarget) {
         // allow to fetch apis in "clusterId.localhost:port" from "localhost:port"
-        res.setHeader("Access-Control-Allow-Origin", this.origin);
+        // this should be safe because we have already validated cluster uuid
+        res.setHeader("Access-Control-Allow-Origin", "*");
 
         return proxy.web(req, res, proxyTarget);
       }
