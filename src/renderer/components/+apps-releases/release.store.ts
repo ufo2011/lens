@@ -33,7 +33,7 @@ export class ReleaseStore extends ItemStore<HelmRelease> {
       });
 
       if (amountChanged || labelsChanged) {
-        this.loadAll();
+        this.loadFromContextNamespaces();
       }
       this.releaseSecrets = [...secrets];
     });
@@ -58,11 +58,11 @@ export class ReleaseStore extends ItemStore<HelmRelease> {
   }
 
   @action
-  async loadAll() {
+  async loadAll(namespaces: string[]) {
     this.isLoading = true;
 
     try {
-      const items = await this.loadItems(namespaceStore.getContextNamespaces());
+      const items = await this.loadItems(namespaces);
 
       this.items.replace(this.sortItems(items));
       this.isLoaded = true;
@@ -73,16 +73,27 @@ export class ReleaseStore extends ItemStore<HelmRelease> {
     }
   }
 
+  async loadFromContextNamespaces(): Promise<void> {
+    return this.loadAll(namespaceStore.contextNamespaces);
+  }
+
   async loadItems(namespaces: string[]) {
-    return Promise
-      .all(namespaces.map(namespace => helmReleasesApi.list(namespace)))
-      .then(items => items.flat());
+    const isLoadingAll = namespaceStore.allowedNamespaces.every(ns => namespaces.includes(ns));
+    const noAccessibleNamespaces = namespaceStore.context.cluster.accessibleNamespaces.length === 0;
+
+    if (isLoadingAll && noAccessibleNamespaces) {
+      return helmReleasesApi.list();
+    } else {
+      return Promise
+        .all(namespaces.map(namespace => helmReleasesApi.list(namespace)))
+        .then(items => items.flat());
+    }
   }
 
   async create(payload: IReleaseCreatePayload) {
     const response = await helmReleasesApi.create(payload);
 
-    if (this.isLoaded) this.loadAll();
+    if (this.isLoaded) this.loadFromContextNamespaces();
 
     return response;
   }
@@ -90,7 +101,7 @@ export class ReleaseStore extends ItemStore<HelmRelease> {
   async update(name: string, namespace: string, payload: IReleaseUpdatePayload) {
     const response = await helmReleasesApi.update(name, namespace, payload);
 
-    if (this.isLoaded) this.loadAll();
+    if (this.isLoaded) this.loadFromContextNamespaces();
 
     return response;
   }
@@ -98,7 +109,7 @@ export class ReleaseStore extends ItemStore<HelmRelease> {
   async rollback(name: string, namespace: string, revision: number) {
     const response = await helmReleasesApi.rollback(name, namespace, revision);
 
-    if (this.isLoaded) this.loadAll();
+    if (this.isLoaded) this.loadFromContextNamespaces();
 
     return response;
   }

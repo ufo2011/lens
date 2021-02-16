@@ -1,12 +1,11 @@
-import { action, comparer, IReactionDisposer, IReactionOptions, observable, reaction, toJS, when } from "mobx";
+import { action, comparer, computed, IReactionDisposer, IReactionOptions, observable, reaction } from "mobx";
 import { autobind, createStorage } from "../../utils";
 import { KubeObjectStore, KubeObjectStoreLoadingParams } from "../../kube-object.store";
 import { Namespace, namespacesApi } from "../../api/endpoints/namespaces.api";
 import { createPageParam } from "../../navigation";
 import { apiManager } from "../../api/api-manager";
-import { clusterStore, getHostedCluster } from "../../../common/cluster-store";
 
-const storage = createStorage<string[]>("context_namespaces");
+const storage = createStorage<string[]>("context_namespaces", []);
 
 export const namespaceUrlParam = createPageParam<string[]>({
   name: "namespaces",
@@ -34,10 +33,7 @@ export function getDummyNamespace(name: string) {
 export class NamespaceStore extends KubeObjectStore<Namespace> {
   api = namespacesApi;
 
-  @observable contextNs = observable.array<string>();
-  @observable isReady = false;
-
-  whenReady = when(() => this.isReady);
+  @observable private contextNs = observable.set<string>();
 
   constructor() {
     super();
@@ -45,19 +41,15 @@ export class NamespaceStore extends KubeObjectStore<Namespace> {
   }
 
   private async init() {
-    await clusterStore.whenLoaded;
-    if (!getHostedCluster()) return;
-    await getHostedCluster().whenReady; // wait for cluster-state from main
+    await this.contextReady;
 
     this.setContext(this.initialNamespaces);
     this.autoLoadAllowedNamespaces();
     this.autoUpdateUrlAndLocalStorage();
-
-    this.isReady = true;
   }
 
   public onContextChange(callback: (contextNamespaces: string[]) => void, opts: IReactionOptions = {}): IReactionDisposer {
-    return reaction(() => this.contextNs.toJS(), callback, {
+    return reaction(() => Array.from(this.contextNs), callback, {
       equals: comparer.shallow,
       ...opts,
     });
@@ -73,59 +65,56 @@ export class NamespaceStore extends KubeObjectStore<Namespace> {
   }
 
   private autoLoadAllowedNamespaces(): IReactionDisposer {
-    return reaction(() => this.allowedNamespaces, () => this.loadAll(), {
+    return reaction(() => this.allowedNamespaces, namespaces => this.loadAll({ namespaces }), {
       fireImmediately: true,
       equals: comparer.shallow,
     });
   }
 
-  get allowedNamespaces(): string[] {
-    return toJS(getHostedCluster().allowedNamespaces);
-  }
-
+  @computed
   private get initialNamespaces(): string[] {
-    const allowed = new Set(this.allowedNamespaces);
-    const prevSelected = storage.get();
+    const namespaces = new Set(this.allowedNamespaces);
+    const prevSelected = storage.get().filter(namespace => namespaces.has(namespace));
 
-    if (Array.isArray(prevSelected)) {
-      return prevSelected.filter(namespace => allowed.has(namespace));
+    // return previously saved namespaces from local-storage
+    if (prevSelected.length > 0) {
+      return prevSelected;
     }
 
     // otherwise select "default" or first allowed namespace
-    if (allowed.has("default")) {
+    if (namespaces.has("default")) {
       return ["default"];
-    } else if (allowed.size) {
-      return [Array.from(allowed)[0]];
+    } else if (namespaces.size) {
+      return [Array.from(namespaces)[0]];
     }
 
     return [];
   }
 
-  getContextNamespaces(): string[] {
-    const namespaces = this.contextNs.toJS();
+  @computed get allowedNamespaces(): string[] {
+    return Array.from(new Set([
+      ...(this.context?.allNamespaces ?? []), // allowed namespaces from cluster (main), updating every 30s
+      ...this.items.map(item => item.getName()), // loaded namespaces from k8s api
+    ].flat()));
+  }
 
-    // show all namespaces when nothing selected
+  @computed get contextNamespaces(): string[] {
+    const namespaces = Array.from(this.contextNs);
+
     if (!namespaces.length) {
-      if (this.isLoaded) {
-        // return actual namespaces list since "allowedNamespaces" updating every 30s in cluster and thus might be stale
-        return this.items.map(namespace => namespace.getName());
-      }
-
-      return this.allowedNamespaces;
+      return this.allowedNamespaces; // show all namespaces when nothing selected
     }
 
     return namespaces;
   }
 
-  subscribe(apis = [this.api]) {
-    const { accessibleNamespaces } = getHostedCluster();
-
+  getSubscribeApis() {
     // if user has given static list of namespaces let's not start watches because watch adds stuff that's not wanted
-    if (accessibleNamespaces.length > 0) {
-      return Function; // no-op
+    if (this.context?.cluster.accessibleNamespaces.length > 0) {
+      return [];
     }
 
-    return super.subscribe(apis);
+    return super.getSubscribeApis();
   }
 
   protected async loadItems(params: KubeObjectStoreLoadingParams) {
@@ -143,26 +132,51 @@ export class NamespaceStore extends KubeObjectStore<Namespace> {
   }
 
   @action
-  setContext(namespaces: string[]) {
+  setContext(namespace: string | string[]) {
+    const namespaces = [namespace].flat();
+
     this.contextNs.replace(namespaces);
   }
 
-  hasContext(namespace: string | string[]) {
-    const context = Array.isArray(namespace) ? namespace : [namespace];
+  @action
+  resetContext() {
+    this.contextNs.clear();
+  }
 
-    return context.every(namespace => this.contextNs.includes(namespace));
+  hasContext(namespaces: string | string[]) {
+    return [namespaces].flat().every(namespace => this.contextNs.has(namespace));
+  }
+
+  @computed get hasAllContexts(): boolean {
+    return this.contextNs.size === this.allowedNamespaces.length;
   }
 
   @action
   toggleContext(namespace: string) {
-    if (this.hasContext(namespace)) this.contextNs.remove(namespace);
-    else this.contextNs.push(namespace);
+    if (this.hasContext(namespace)) {
+      this.contextNs.delete(namespace);
+    } else {
+      this.contextNs.add(namespace);
+    }
+  }
+
+  @action
+  toggleAll(showAll?: boolean) {
+    if (typeof showAll === "boolean") {
+      if (showAll) {
+        this.setContext(this.allowedNamespaces);
+      } else {
+        this.contextNs.clear();
+      }
+    } else {
+      this.toggleAll(!this.hasAllContexts);
+    }
   }
 
   @action
   async remove(item: Namespace) {
     await super.remove(item);
-    this.contextNs.remove(item.getName());
+    this.contextNs.delete(item.getName());
   }
 }
 

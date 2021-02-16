@@ -2,7 +2,7 @@ import "./item-list-layout.scss";
 import groupBy from "lodash/groupBy";
 
 import React, { ReactNode } from "react";
-import { computed, IReactionDisposer, observable, reaction, toJS } from "mobx";
+import { computed, observable, reaction, toJS } from "mobx";
 import { disposeOnUnmount, observer } from "mobx-react";
 import { ConfirmDialog, ConfirmDialogParams } from "../confirm-dialog";
 import { Table, TableCell, TableCellProps, TableHead, TableProps, TableRow, TableRowProps, TableSortCallback } from "../table";
@@ -12,16 +12,16 @@ import { NoItems } from "../no-items";
 import { Spinner } from "../spinner";
 import { ItemObject, ItemStore } from "../../item.store";
 import { SearchInputUrl } from "../input";
-import { namespaceStore } from "../+namespaces/namespace.store";
 import { Filter, FilterType, pageFilters } from "./page-filters.store";
 import { PageFiltersList } from "./page-filters-list";
 import { PageFiltersSelect } from "./page-filters-select";
-import { NamespaceSelectFilter } from "../+namespaces/namespace-select";
+import { NamespaceSelectFilter } from "../+namespaces/namespace-select-filter";
 import { themeStore } from "../../theme.store";
 import { MenuActions } from "../menu/menu-actions";
 import { MenuItem } from "../menu";
 import { Checkbox } from "../checkbox";
 import { userStore } from "../../../common/user-store";
+import { namespaceStore } from "../+namespaces/namespace.store";
 
 // todo: refactor, split to small re-usable components
 
@@ -38,8 +38,10 @@ interface IHeaderPlaceholders {
 export interface ItemListLayoutProps<T extends ItemObject = ItemObject> {
   tableId?: string;
   className: IClassName;
+  items?: T[];
   store: ItemStore<T>;
   dependentStores?: ItemStore[];
+  preloadStores?: boolean;
   isClusterScoped?: boolean;
   hideFilters?: boolean;
   searchFilters?: SearchFilter<T>[];
@@ -82,6 +84,7 @@ const defaultProps: Partial<ItemListLayoutProps> = {
   isSelectable: true,
   isConfigurable: false,
   copyClassNameFromHeadCells: true,
+  preloadStores: true,
   dependentStores: [],
   filterItems: [],
   hasDetailsView: true,
@@ -96,10 +99,6 @@ interface ItemListLayoutUserSettings {
 @observer
 export class ItemListLayout extends React.Component<ItemListLayoutProps> {
   static defaultProps = defaultProps as object;
-
-  private watchDisposers: IReactionDisposer[] = [];
-
-  @observable isUnmounting = false;
 
   @observable userSettings: ItemListLayoutUserSettings = {
     showAppliedFilters: false,
@@ -119,54 +118,29 @@ export class ItemListLayout extends React.Component<ItemListLayoutProps> {
   }
 
   async componentDidMount() {
-    const { isClusterScoped, isConfigurable, tableId } = this.props;
+    const { isClusterScoped, isConfigurable, tableId, preloadStores } = this.props;
 
     if (isConfigurable && !tableId) {
       throw new Error("[ItemListLayout]: configurable list require props.tableId to be specified");
     }
 
-    this.loadStores();
+    if (preloadStores) {
+      this.loadStores();
 
-    if (!isClusterScoped) {
-      disposeOnUnmount(this, [
-        namespaceStore.onContextChange(() => this.loadStores())
-      ]);
+      if (!isClusterScoped) {
+        disposeOnUnmount(this, [
+          namespaceStore.onContextChange(() => this.loadStores())
+        ]);
+      }
     }
   }
 
-  async componentWillUnmount() {
-    this.isUnmounting = true;
-    this.unsubscribeStores();
-  }
-
-  @computed get stores() {
+  private loadStores() {
     const { store, dependentStores } = this.props;
+    const stores = Array.from(new Set([store, ...dependentStores]));
 
-    return new Set([store, ...dependentStores]);
-  }
-
-  async loadStores() {
-    this.unsubscribeStores(); // reset first
-
-    // load
-    for (const store of this.stores) {
-      if (this.isUnmounting) {
-        this.unsubscribeStores();
-        break;
-      }
-
-      try {
-        await store.loadAll();
-        this.watchDisposers.push(store.subscribe());
-      } catch (error) {
-        console.error("loading store error", error);
-      }
-    }
-  }
-
-  unsubscribeStores() {
-    this.watchDisposers.forEach(dispose => dispose());
-    this.watchDisposers.length = 0;
+    // load context namespaces by default (see also: `<NamespaceSelectFilter/>`)
+    stores.forEach(store => store.loadAll(namespaceStore.contextNamespaces));
   }
 
   private filterCallbacks: { [type: string]: ItemsFilter } = {
@@ -207,11 +181,7 @@ export class ItemListLayout extends React.Component<ItemListLayoutProps> {
 
   @computed get filters() {
     let { activeFilters } = pageFilters;
-    const { isClusterScoped, isSearchable, searchFilters } = this.props;
-
-    if (isClusterScoped) {
-      activeFilters = activeFilters.filter(({ type }) => type !== FilterType.NAMESPACE);
-    }
+    const { isSearchable, searchFilters } = this.props;
 
     if (!(isSearchable && searchFilters)) {
       activeFilters = activeFilters.filter(({ type }) => type !== FilterType.SEARCH);
@@ -245,7 +215,9 @@ export class ItemListLayout extends React.Component<ItemListLayoutProps> {
       }
     });
 
-    return this.applyFilters(filterItems, allItems);
+    const items = this.props.items ?? allItems;
+
+    return this.applyFilters(filterItems, items);
   }
 
   @autobind()
@@ -310,8 +282,8 @@ export class ItemListLayout extends React.Component<ItemListLayoutProps> {
     const dialogCustomProps = customizeRemoveDialog ? customizeRemoveDialog(selectedItems) : {};
     const selectedCount = selectedItems.length;
     const tailCount = selectedCount > visibleMaxNamesCount ? selectedCount - visibleMaxNamesCount : 0;
-    const tail = tailCount > 0 ? "and <b>{tailCount}</b> more" : null;
-    const message = selectedCount <= 1 ? <p>Remove item <b>{selectedNames}</b>?</p> : <p>Remove <b>{selectedCount}</b> items <b>{selectedNames}</b> {tail}?</p>;
+    const tail = tailCount > 0 ? <>, and <b>{tailCount}</b> more</> : null;
+    const message = selectedCount <= 1 ? <p>Remove item <b>{selectedNames}</b>?</p> : <p>Remove <b>{selectedCount}</b> items <b>{selectedNames}</b>{tail}?</p>;
 
     ConfirmDialog.open({
       ok: removeSelectedItems,
@@ -365,8 +337,8 @@ export class ItemListLayout extends React.Component<ItemListLayoutProps> {
   }
 
   renderInfo() {
-    const { allItems, items, isReady, userSettings, filters } = this;
-    const allItemsCount = allItems.length;
+    const { items, isReady, userSettings, filters } = this;
+    const allItemsCount = this.props.store.getTotalCount();
     const itemsCount = items.length;
     const isFiltered = isReady && filters.length > 0;
 

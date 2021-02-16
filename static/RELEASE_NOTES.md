@@ -2,13 +2,20 @@
 
 Here you can find description of changes we've built into each release. While we try our best to make each upgrade automatic and as smooth as possible, there may be some cases where you might need to do something to ensure the application works smoothly. So please read through the release highlights!
 
-## 4.1.0-alpha.1 (current version)
+## 4.1.0 (current version)
 
-- Change: list views default to a namespace (insted of listing resources from all namespaces)
+**Upgrade note:** Where have all my pods gone? Namespaced Kubernetes resources are now initially shown only for the "default" namespace. Use the namespaces selector to add more.
+
+- Change: list views default to a namespace (instead of listing resources from all namespaces)
+- Command palette
 - Generic logs view with Pod selector
+- In-app survey extension
+- Auto-update notifications and confirmation
 - Possibility to add custom Helm repository through Lens
-- Possibility to change visibility of Pod list columns
+- Possibility to change visibility of common resource list columns
 - Suspend / resume buttons for CronJobs
+- Allow namespace to specified on role creation
+- Allow for changing installation directory on Windows
 - Dock tabs context menu
 - Display node column in Pod list
 - Unify age column output with kubectl
@@ -16,6 +23,10 @@ Here you can find description of changes we've built into each release. While we
 - Improve Pod tolerations layout
 - Lens metrics: scrape only lens-metrics namespace
 - Lens metrics: Prometheus v2.19.3
+- Update bundled kubectl to v1.18.15
+- Improve how watch requests are handled
+- Helm rollback window with more details
+- Log more on start up
 - Export PodDetailsList component to extension API
 - Export Wizard components to extension API
 - Export NamespaceSelect component to extension API
