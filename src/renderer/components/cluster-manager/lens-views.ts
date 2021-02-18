@@ -2,6 +2,7 @@ import { observable, when } from "mobx";
 import { ClusterId, clusterStore, getClusterFrameUrl } from "../../../common/cluster-store";
 import { getMatchedClusterId } from "../../navigation";
 import logger from "../../../main/logger";
+import AwaitLock from "await-lock";
 
 export interface LensView {
   isLoaded?: boolean
@@ -10,36 +11,43 @@ export interface LensView {
 }
 
 export const lensViews = observable.map<ClusterId, LensView>();
+const lensViewsLock = new AwaitLock();
 
 export function hasLoadedView(clusterId: ClusterId): boolean {
   return !!lensViews.get(clusterId)?.isLoaded;
 }
 
 export async function initView(clusterId: ClusterId) {
-  if (!clusterId || lensViews.has(clusterId)) {
-    return;
+  try {
+    await lensViewsLock.acquireAsync();
+
+    if (!clusterId || lensViews.has(clusterId)) {
+      return;
+    }
+    const cluster = clusterStore.getById(clusterId);
+
+    if (!cluster) {
+      return;
+    }
+
+    logger.info(`[LENS-VIEW]: waiting cluster to be ready, clusterId=${clusterId}`);
+    await cluster.whenReady;
+    logger.info(`[LENS-VIEW]: init dashboard, clusterId=${clusterId}`);
+    const parentElem = document.getElementById("lens-views");
+    const iframe = document.createElement("iframe");
+
+    iframe.name = cluster.contextName;
+    iframe.setAttribute("src", getClusterFrameUrl(clusterId));
+    iframe.addEventListener("load", () => {
+      logger.info(`[LENS-VIEW]: loaded from ${iframe.src}`);
+      lensViews.get(clusterId).isLoaded = true;
+    }, { once: true });
+    lensViews.set(clusterId, { clusterId, view: iframe });
+    parentElem.appendChild(iframe);
+    await autoCleanOnRemove(clusterId, iframe);
+  } finally {
+    lensViewsLock.release();
   }
-  const cluster = clusterStore.getById(clusterId);
-
-  if (!cluster) {
-    return;
-  }
-
-  logger.info(`[LENS-VIEW]: waiting cluster to be ready, clusterId=${clusterId}`);
-  await cluster.whenReady;
-  logger.info(`[LENS-VIEW]: init dashboard, clusterId=${clusterId}`);
-  const parentElem = document.getElementById("lens-views");
-  const iframe = document.createElement("iframe");
-
-  iframe.name = cluster.contextName;
-  iframe.setAttribute("src", getClusterFrameUrl(clusterId));
-  iframe.addEventListener("load", () => {
-    logger.info(`[LENS-VIEW]: loaded from ${iframe.src}`);
-    lensViews.get(clusterId).isLoaded = true;
-  }, { once: true });
-  lensViews.set(clusterId, { clusterId, view: iframe });
-  parentElem.appendChild(iframe);
-  await autoCleanOnRemove(clusterId, iframe);
 }
 
 export async function autoCleanOnRemove(clusterId: ClusterId, iframe: HTMLIFrameElement) {
