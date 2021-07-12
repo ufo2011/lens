@@ -1,4 +1,25 @@
-import { getExtensionPageUrl, globalPageRegistry, PageParams } from "../page-registry";
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+import { ClusterPageRegistry, getExtensionPageUrl, GlobalPageRegistry, PageParams } from "../page-registry";
 import { LensExtension } from "../../lens-extension";
 import React from "react";
 import { Console } from "console";
@@ -19,9 +40,11 @@ describe("getPageUrl", () => {
       absolutePath: "/absolute/fake/",
       manifestPath: "/this/is/fake/package.json",
       isBundled: false,
-      isEnabled: true
+      isEnabled: true,
+      isCompatible: true
     });
-    globalPageRegistry.add({
+    ClusterPageRegistry.createInstance();
+    GlobalPageRegistry.createInstance().add({
       id: "page-with-params",
       components: {
         Page: () => React.createElement("Page with params")
@@ -31,6 +54,11 @@ describe("getPageUrl", () => {
         test2: "" // no default value, just declaration
       },
     }, ext);
+  });
+
+  afterEach(() => {
+    GlobalPageRegistry.resetInstance();
+    ClusterPageRegistry.resetInstance();
   });
 
   it("returns a page url for extension", () => {
@@ -54,15 +82,22 @@ describe("getPageUrl", () => {
   });
 
   it("gets page url with custom params", () => {
-    const params: PageParams<string> = { test1: "one", test2: "2" };
+    const params: PageParams = { test1: "one", test2: "2" };
     const searchParams = new URLSearchParams(params);
-    const pageUrl = getExtensionPageUrl({ extensionId: ext.name, pageId: "page-with-params", params });
+    const pageUrl = getExtensionPageUrl({
+      extensionId: ext.name,
+      pageId: "page-with-params",
+      params,
+    });
 
     expect(pageUrl).toBe(`/extension/foo-bar/page-with-params?${searchParams}`);
   });
 
   it("gets page url with default custom params", () => {
-    const defaultPageUrl = getExtensionPageUrl({ extensionId: ext.name, pageId: "page-with-params", });
+    const defaultPageUrl = getExtensionPageUrl({
+      extensionId: ext.name,
+      pageId: "page-with-params",
+    });
 
     expect(defaultPageUrl).toBe(`/extension/foo-bar/page-with-params?test1=test1-default`);
   });
@@ -79,9 +114,11 @@ describe("globalPageRegistry", () => {
       absolutePath: "/absolute/fake/",
       manifestPath: "/this/is/fake/package.json",
       isBundled: false,
-      isEnabled: true
+      isEnabled: true,
+      isCompatible: true
     });
-    globalPageRegistry.add([
+    ClusterPageRegistry.createInstance();
+    GlobalPageRegistry.createInstance().add([
       {
         id: "test-page",
         components: {
@@ -102,9 +139,14 @@ describe("globalPageRegistry", () => {
     ], ext);
   });
 
+  afterEach(() => {
+    GlobalPageRegistry.resetInstance();
+    ClusterPageRegistry.resetInstance();
+  });
+
   describe("getByPageTarget", () => {
     it("matching to first registered page without id", () => {
-      const page = globalPageRegistry.getByPageTarget({ extensionId: ext.name });
+      const page = GlobalPageRegistry.getInstance().getByPageTarget({ extensionId: ext.name });
 
       expect(page.id).toEqual(undefined);
       expect(page.extensionId).toEqual(ext.name);
@@ -112,7 +154,7 @@ describe("globalPageRegistry", () => {
     });
 
     it("returns matching page", () => {
-      const page = globalPageRegistry.getByPageTarget({
+      const page = GlobalPageRegistry.getInstance().getByPageTarget({
         pageId: "test-page",
         extensionId: ext.name
       });
@@ -121,7 +163,7 @@ describe("globalPageRegistry", () => {
     });
 
     it("returns null if target not found", () => {
-      const page = globalPageRegistry.getByPageTarget({
+      const page = GlobalPageRegistry.getInstance().getByPageTarget({
         pageId: "wrong-page",
         extensionId: ext.name
       });
